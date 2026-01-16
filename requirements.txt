@@ -1,0 +1,7 @@
+requests
+reportlab
+google-generativeai
+python-dotenv
+pytz
+Pillow
+PyPDF2
