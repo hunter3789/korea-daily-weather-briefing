@@ -32,7 +32,7 @@ from PIL import Image
 
 # ====== 환경설정 ======
 load_dotenv()
-#GEMINI_API_KEY = ""
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 #DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 # Gemini 설정
@@ -666,5 +666,6 @@ def main():
 
 #if __name__ == "__main__":
 #    main()
+
 
 
