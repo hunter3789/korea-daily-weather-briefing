@@ -36,6 +36,7 @@ jobs:
           # Inject the secrets as environment variables
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}          
         run: |
           python daily_briefing_openai.py
 
