@@ -253,7 +253,8 @@ Valid 시간: {valid_str} (KST: {kst_str})
 
     print("Calling OpenAI for briefing JSON (with base64 images)...")
     response = client.responses.create(
-        model="gpt-4.1-mini",  # or "gpt-5.2-pro" if you want higher quality & cost
+        #model="gpt-4.1-mini",  # or "gpt-5.2-pro" if you want higher quality & cost
+        model="gpt-5.2-pro",
         input=[
             {
                 "role": "user",
