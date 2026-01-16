@@ -601,7 +601,33 @@ def post_to_discord(pdf_bytes, base_utc):
     except Exception as e:
         print(f"Failed to upload to Discord: {e}")
 
+# ===================== PARSE JSON =====================
 
+def clean_parse_json(text):
+    """
+    Safely parses JSON from Gemini output, handling both
+    Markdown code blocks (```json ... ```) and raw JSON strings.
+    """
+    try:
+        # 1. Try parsing directly (Best for 'response_mime_type="application/json"')
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass  # If failed, try cleaning
+
+    try:
+        # 2. Extract JSON content using Regex (Handles ```json, ```, and plain text)
+        # Looks for the first '{' and the last '}'
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            cleaned_text = match.group(0)
+            return json.loads(cleaned_text)
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    # 3. Fallback: Return empty dict or raise specific error
+    print(f"❌ JSON Parsing Failed. Raw text preview: {text[:100]}...")
+    return {}
+    
 # ===================== MAIN =====================
 
 
@@ -632,32 +658,6 @@ def main():
     #print(f"✅ PDF saved locally: {local_filename}")
 
     post_to_discord(pdf_bytes, base_utc)
-
-
-def clean_parse_json(text):
-    """
-    Safely parses JSON from Gemini output, handling both
-    Markdown code blocks (```json ... ```) and raw JSON strings.
-    """
-    try:
-        # 1. Try parsing directly (Best for 'response_mime_type="application/json"')
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass  # If failed, try cleaning
-
-    try:
-        # 2. Extract JSON content using Regex (Handles ```json, ```, and plain text)
-        # Looks for the first '{' and the last '}'
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            cleaned_text = match.group(0)
-            return json.loads(cleaned_text)
-    except (json.JSONDecodeError, AttributeError):
-        pass
-
-    # 3. Fallback: Return empty dict or raise specific error
-    print(f"❌ JSON Parsing Failed. Raw text preview: {text[:100]}...")
-    return {}
   
 if __name__ == "__main__":
     main()
