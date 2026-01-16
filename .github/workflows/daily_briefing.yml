@@ -1,0 +1,49 @@
+name: Daily Weather Briefing
+
+on:
+  schedule:
+    # Runs at 00:00 UTC every day (which is 09:00 AM KST)
+    # Cron format: 'minute hour day month day-of-week'
+    - cron: '0 0 * * *'
+  
+  # Allows you to run this manually from the Actions tab for testing
+  workflow_dispatch:
+
+jobs:
+  run-weather-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the repository code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2. Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      # 3. Install dependencies
+      - name: Install libraries
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Run the script
+      - name: Run Briefing Script
+        env:
+          # Inject the secrets as environment variables
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python main.py
+
+      # 5. (Optional) Save the PDF as an artifact on GitHub
+      # This lets you download the PDF from the GitHub Actions summary page
+      - name: Upload PDF Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Weather-Briefing-PDF
+          path: "*.pdf"
+          retention-days: 5
