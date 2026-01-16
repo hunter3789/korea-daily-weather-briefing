@@ -35,7 +35,7 @@ from PIL import Image
 # ====== 환경설정 ======
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-#DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 # Gemini 설정
 genai.configure(api_key=GEMINI_API_KEY)
@@ -691,6 +691,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
