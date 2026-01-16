@@ -37,7 +37,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          python main.py
+          python daily_briefing.py
 
       # 5. (Optional) Save the PDF as an artifact on GitHub
       # This lets you download the PDF from the GitHub Actions summary page
