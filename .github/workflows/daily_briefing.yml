@@ -38,6 +38,7 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}          
         run: |
+          python daily_briefing.py        
           python daily_briefing_openai.py
 
       # 5. (Optional) Save the PDF as an artifact on GitHub
