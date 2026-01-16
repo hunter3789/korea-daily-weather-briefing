@@ -433,7 +433,7 @@ def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
     style_warning = ParagraphStyle(
         'WarningText', parent=styles['Normal'],
         fontName=font_bold, fontSize=10, leading=15,
-        textColor=colors.firebrick
+        textColor=colors.darkblue
     )
 
     # Summary Box Style
@@ -441,6 +441,8 @@ def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
         'SummaryText', parent=style_body,
         fontSize=11, leading=16, textColor=colors.black
     )
+
+    style_warn = ParagraphStyle('Warn', parent=styles['Normal'], textColor=colors.firebrick)    
 
     story = []
 
@@ -454,7 +456,7 @@ def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
     # ================= SUMMARY BOX =================
     # Create a shaded box for the summary
     summary_content = data.get("summary", "").replace("\n", "<br/>")
-    summary_para = Paragraph(f"<b>[Executive Summary]</b><br/>{summary_content}", style_summary_box)
+    summary_para = Paragraph(f"<b>[요약]</b><br/>{summary_content}", style_summary_box)
     
     summary_table = Table([[summary_para]], colWidths=[170*mm])
     summary_table.setStyle(TableStyle([
@@ -464,7 +466,12 @@ def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
     ]))
     story.append(summary_table)
-    story.append(Spacer(1, 10*mm))
+    story.append(Spacer(1, 3*mm))
+
+
+    # 1. Synoptic & Key Features
+    story.append(Paragraph("1. Synoptic Overview & Key Features", style_h2))
+    story.append(Paragraph(f"<b>[Synoptic]</b> {data.get('synoptic_overview', '-')}", style_body))
 
     # ================= IMAGES (GRID) =================
     # Layout: Satellite (Left) | Surface 0h (Right)
@@ -487,10 +494,10 @@ def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
         [Paragraph("GK2A Satellite (WV)", style_meta), Paragraph("Surface Analysis (00h)", style_meta)]
     ]
     
-    # Row 2: Surface 24h & 500hPa 24h
+    # Row 2: 500hPa 00h & 850hPa 00h
     row2 = [
-        [prep_img(images['surface'][2]), prep_img(images['gph500'][2])],
-        [Paragraph("Surface Forecast (+24h)", style_meta), Paragraph("500hPa Forecast (+24h)", style_meta)]
+        [prep_img(images['gph500'][0]), prep_img(images['wnd850'][0])],
+        [Paragraph("500hPa Analysis (00h)", style_meta), Paragraph("850hPa Analysis (00h)", style_meta)]
     ]
 
     # Build Image Table
@@ -505,25 +512,86 @@ def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
     ]))
     story.append(t_img)
     
-    story.append(PageBreak()) # Move text to next page for cleanliness
+    #story.append(PageBreak()) # Move text to next page for cleanliness
 
     # ================= TEXT REPORT =================
 
-    # 1. Synoptic & Key Features
-    story.append(Paragraph("1. Synoptic Overview & Key Features", style_h2))
-    story.append(Paragraph(f"<b>[Synoptic]</b> {data.get('synoptic_overview', '-')}", style_body))
+
+    #story.append(Spacer(1, 3*mm))
+    #story.append(Paragraph(f"<b>[24-48h Outlook]</b> {data.get('key_features_24_48h', '-')}", style_body))
     story.append(Spacer(1, 3*mm))
-    story.append(Paragraph(f"<b>[24-48h Outlook]</b> {data.get('key_features_24_48h', '-')}", style_body))
+    story.append(Paragraph(f"<b>[24h Outlook]</b> {data.get('key_features_24h', '-')}", style_body))
+
+    # Row 1: 500hPa & Surface 24h
+    row1 = [
+        [prep_img(images['gph500'][2]), prep_img(images['surface'][2])],
+        [Paragraph("500hPa Analysis (+24h)", style_meta), Paragraph("Surface Analysis (+24h)", style_meta)]
+    ]
+    
+    # Build Image Table
+    img_table_data = row1
+    t_img = Table(img_table_data, colWidths=[90*mm, 90*mm])
+    t_img.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 2),
+        ('RIGHTPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t_img)
+
+    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph(f"<b>[48h Outlook]</b> {data.get('key_features_48h', '-')}", style_body))    
+
+    # Row 1: 500hPa & Surface 48h
+    row1 = [
+        [prep_img(images['gph500'][4]), prep_img(images['surface'][4])],
+        [Paragraph("500hPa Analysis (+48h)", style_meta), Paragraph("Surface Analysis (+48h)", style_meta)]
+    ]
+    
+    # Build Image Table
+    img_table_data = row1
+    t_img = Table(img_table_data, colWidths=[90*mm, 90*mm])
+    t_img.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 2),
+        ('RIGHTPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t_img)
 
     # 2. Hazards (Highlighted)
+    story.append(Spacer(1, 3*mm))    
     story.append(Paragraph("2. Hazards & Warnings", style_h2))
-    hazards_text = data.get("hazards", "")
-    # If hazards have newlines, handle them
-    if "\n" in hazards_text:
-        for line in hazards_text.split("\n"):
-            story.append(Paragraph(f"{line}", style_warning))
+    hazards = data.get("hazards", [])
+    if hazards:
+        table_data = []      
+        for h in hazards:
+            # Check if hazard has a title (e.g., "대설: ...")
+            if ":" in h:
+                [head, body] = h.split(":")
+                #h_fmt = f"<b>{head}:</b> {body}"
+                table_data.append([
+                    Paragraph(f"<b>{head}</b>", style_body),
+                    Paragraph(body, style_body)
+                ])                
+            else:
+                table_data.append([
+                    Paragraph("", style_body),
+                    Paragraph(h, style_body)
+                ])     
+
+        t_regional = Table(table_data, colWidths=[40*mm, 130*mm])
+        t_regional.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+            ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), # Shade the region column
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('PADDING', (0,0), (-1,-1), 6),
+        ]))
+        story.append(t_regional)                              
     else:
-        story.append(Paragraph(f"{hazards_text}", style_warning))
+        story.append(Paragraph("No significant hazards reported.", style_body))
 
     # 3. Regional Weather (Table Layout)
     story.append(Paragraph("3. Regional Weather Details", style_h2))
@@ -598,4 +666,5 @@ def main():
 
 #if __name__ == "__main__":
 #    main()
+
 
