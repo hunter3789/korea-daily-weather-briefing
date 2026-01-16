@@ -156,7 +156,7 @@ def generate_briefing_text(base_utc, images_dict):
 
 Valid 시간: {valid_str} (KST: {kst_str})
 
-아래 포맷에 맞춰 **한국어**로 작성해 주세요. 
+아래 포맷에 맞춰 **한국어**로 작성해 주세요.
 기상학적 전문 용어를 사용하되, 논리적 근거(Reasoning)를 명확히 하세요.
 
 1. 종관 개황 (Synoptic overview)
@@ -172,7 +172,8 @@ Valid 시간: {valid_str} (KST: {kst_str})
 {{
   "title": "한반도 일일 기상 브리핑",
   "synoptic_overview": "종관 개황 내용...",
-  "key_features_24_48h": "24~48시간 주요 특징...",
+  "key_features_24h": "24시간 예측 주요 특징...",
+  "key_features_48h": "48시간 예측 주요 특징...",
   "sensible_weather": {{
       "seoul_metro": "수도권 날씨...",
       "gangwon": "강원도 날씨...",
@@ -181,7 +182,7 @@ Valid 시간: {valid_str} (KST: {kst_str})
       "gyeongsang": "경상권...",
       "jeju": "제주도..."
   }},
-  "hazards": "위험기상요소...",
+  "hazards": ["위험기상요소1 주요 특징...", "위험기상요소2 주요 특징..."],
   "uncertainties": "주요 불확실성...",
   "summary": "내부 브리핑 요약 (3줄)"
 }}
@@ -691,6 +692,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
