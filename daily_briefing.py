@@ -9,24 +9,63 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-from openai import OpenAI
+import google.generativeai as genai
+from PIL import Image
 
 # ====== 환경설정 ======
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+GEMINI_API_KEY = "AIzaSyAYjyhdgdORFmRM_LSvRdb5SUxxncI449k"
+#DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# Gemini 설정
+genai.configure(api_key=GEMINI_API_KEY)
+# Free version (High rate limits, standard performance)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 KST = pytz.timezone("Asia/Seoul")
 
+# ====== [중요] 한글 폰트 설정 ======
+# ReportLab 기본 폰트(Helvetica)는 한글을 출력하지 못하므로, 시스템에 있는 한글 폰트 경로를 지정해야 합니다.
+# 예: Windows -> "C:/Windows/Fonts/malgun.ttf"
+# 예: Linux/Mac -> "/usr/share/fonts/truetype/nanum/NanumGothic.ttf" (경로 확인 필요)
+# ====== [Auto-Download] 한글 폰트 설정 ======
+KOREAN_FONT_URL = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
+KOREAN_FONT_PATH = "NanumGothic.ttf"
+FONT_NAME = "NanumGothic"
+
+def register_korean_font():
+    # 1. Check if font exists locally
+    if not os.path.exists(KOREAN_FONT_PATH):
+        print("Downloading Korean font (NanumGothic)...")
+        try:
+            resp = requests.get(KOREAN_FONT_URL, timeout=10)
+            resp.raise_for_status()
+            with open(KOREAN_FONT_PATH, "wb") as f:
+                f.write(resp.content)
+            print("Font downloaded successfully.")
+        except Exception as e:
+            print(f"Failed to download font: {e}")
+            return False
+
+    # 2. Register the font with ReportLab
+    try:
+        pdfmetrics.registerFont(TTFont(FONT_NAME, KOREAN_FONT_PATH))
+        return True
+    except Exception as e:
+        print(f"Font registration failed: {e}")
+        return False
+
+# Run registration
+HAS_KOREAN_FONT = register_korean_font()
+
 # ----- 1) 오늘 00UTC 기준 날짜 문자열 생성 -----
 def get_base_time_strings():
-    # 지금 KST 기준으로 "오늘 00 UTC"를 기준 시각으로 사용
     now_kst = datetime.now(KST)
-    # KST(UTC+9)에서 날짜만 가져와서 00UTC로 맞추기
-    # 예: 2026-01-16 KST → 2026-01-16 00UTC
     base_utc = datetime(
         year=now_kst.year,
         month=now_kst.month,
@@ -34,21 +73,19 @@ def get_base_time_strings():
         tzinfo=timezone.utc,
     )
     ymd = base_utc.strftime("%Y%m%d")
-    hhh = base_utc.strftime("%H")  # 보통 00
+    hhh = base_utc.strftime("%H")
     return base_utc, ymd, hhh
 
 
-# ----- 2) KMA 이미지 URL 생성 (패턴은 사용자가 제공한 것 그대로) -----
+# ----- 2) KMA 이미지 URL 생성 -----
 def build_kma_urls(ymd, hhh):
-    base_time = f"{ymd}{hhh}"  # 예: 2026011500
-
-    # WV (위성)
+    base_time = f"{ymd}{hhh}"
+    
     wv_url = (
         "https://www.weather.go.kr/w/repositary/image/sat/gk2a/EA/"
         f"gk2a_ami_le1b_wv063_ea020lc_{base_time}00.thn.png"
     )
 
-    # Surface / 500 / 850 (0,12,24,36,48h)
     steps = ["s000", "s012", "s024", "s036", "s048"]
 
     surf_urls = [
@@ -77,7 +114,7 @@ def build_kma_urls(ymd, hhh):
     }
 
 
-# ----- 3) 이미지 다운로드 (실패 시 None, 요약 페이지에서 표시) -----
+# ----- 3) 이미지 다운로드 -----
 def fetch_image(url, timeout=15):
     try:
         resp = requests.get(url, timeout=timeout)
@@ -89,50 +126,74 @@ def fetch_image(url, timeout=15):
         return None
 
 
-# ----- 4) ChatGPT로 한국어 브리핑 텍스트 생성 -----
-def generate_briefing_text(base_utc, urls):
+# ----- 4) Gemini로 한국어 브리핑 텍스트 생성 (멀티모달) -----
+def generate_briefing_text(base_utc, images_dict):
+    """
+    이미지 데이터를 직접 Gemini에게 전달하여 분석을 요청합니다.
+    """
     valid_str = base_utc.strftime("%Y.%m.%d.%H UTC")
+    kst_str = (base_utc + timedelta(hours=9)).strftime("%Y-%m-%d %H시")
 
-    # 이미지 URL들을 텍스트로 함께 전달 (모델이 도판 언급 가능)
-    url_text = [
-        f"WV: {urls['wv']}",
-        "Surface:",
-        *urls["surface"],
-        "500 hPa:",
-        *urls["gph500"],
-        "850 hPa:",
-        *urls["wnd850"],
-    ]
-    url_block = "\n".join(url_text)
+    # 프롬프트 텍스트
+    prompt_text = f"""
+당신은 한국 기상청 수석 예보관입니다.
+첨부된 위성영상(WV), 지상일기도(Surface), 500hPa, 850hPa 차트를 분석하여 일일 브리핑을 작성하세요.
 
-    prompt = f"""
-당신은 한국 기상청 내부용 분석을 작성하는 예보관입니다.
-다음은 한반도 및 동아시아 일일 브리핑에 사용할 도판 URL 목록입니다:
+Valid 시간: {valid_str} (KST: {kst_str})
 
-{url_block}
-
-Valid 시간은 {valid_str} 입니다 (KST로는 { (base_utc + timedelta(hours=9)).strftime("%Y-%m-%d %H시") }).
-
-아래 항목을 **한국어**로 작성해 주세요. 각 항목은 명확한 소제목을 달고, 내부 브리핑용으로 기술적인 용어 사용을 허용합니다.
+아래 포맷에 맞춰 **한국어**로 작성해 주세요. 
+기상학적 전문 용어를 사용하되, 논리적 근거(Reasoning)를 명확히 하세요.
 
 1. 종관 개황 (Synoptic overview)
 2. 24–48시간 주요 특징 (Key features for 24–48h)
-3. 한반도 체감 날씨 (Sensible weather – 권역별: 수도권/서해안/동해안/중부내륙/남부내륙/제주/해상)
-4. 위험 기상 요소 (Hazards)
+3. 한반도 체감 날씨 (수도권/강원/충청/전라/경상/제주/해상)
+4. 위험 기상 요소 (Hazards - 강풍, 호우, 대설, 풍랑 등)
 5. 주요 불확실성 (Uncertainties)
 6. 내부 브리핑 요약 (3~5줄)
 
-가능하면 위성(WV), 지상, 500hPa, 850hPa 도판에서 보이는 특징을
-'근거 → 해석 → 영향' 구조로 간단히 언급해 주세요 (Reasoning A 스타일).
+* 지상, 500hPa, 850hPa 차트는 각각 0h, 24h, 48h 예측장입니다. 시계열 변화를 분석에 반영하세요.
 """
 
-    response = client.responses.create(
-        model="gpt-4.1",
-        input=prompt,
-    )
+    # Gemini에 보낼 컨텐츠 리스트 구성
+    contents = [prompt_text]
 
-    text = response.output_text
-    return text
+    # Helper: BytesIO -> PIL Image 변환
+    def bytes_to_pil(b_io):
+        if b_io is None: return None
+        b_io.seek(0)
+        img = Image.open(b_io)
+        return img
+
+    # 1. 위성 영상 추가
+    if images_dict.get("wv"):
+        contents.append("=== [이미지] GK2A 위성 영상 (수증기) ===")
+        contents.append(bytes_to_pil(images_dict["wv"]))
+
+    # 2. 주요 스텝(0h, 24h, 48h)만 선별해서 Gemini에게 전달 (토큰 절약 및 핵심 분석)
+    # 인덱스: 0(0h), 2(24h), 4(48h)
+    target_indices = [0, 2, 4]
+    time_labels = ["Initial (00h)", "Forecast (+24h)", "Forecast (+48h)"]
+
+    for idx, label in zip(target_indices, time_labels):
+        # Surface
+        if images_dict["surface"][idx]:
+            contents.append(f"=== [이미지] Surface Chart {label} ===")
+            contents.append(bytes_to_pil(images_dict["surface"][idx]))
+        
+        # 500hPa
+        if images_dict["gph500"][idx]:
+            contents.append(f"=== [이미지] 500hPa Chart {label} ===")
+            contents.append(bytes_to_pil(images_dict["gph500"][idx]))
+
+    # 이미지 사용 후 BytesIO 포인터가 끝으로 이동했을 수 있으므로,
+    # 추후 PDF 생성 시 다시 읽을 수 있도록 외부에서 seek(0) 처리가 필요할 수 있음.
+    # (여기서는 PIL.Image.open이 복사본을 메모리에 올리므로 원본 BytesIO는 영향이 적으나 안전하게 처리 필요)
+
+    try:
+        response = model.generate_content(contents)
+        return response.text
+    except Exception as e:
+        return f"분석 생성 실패: {str(e)}"
 
 
 # ----- 5) ReportLab로 단일 컬럼 PDF 생성 -----
@@ -145,14 +206,18 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
     margin_y = 20 * mm
     usable_width = width - 2 * margin_x
 
+    # 폰트 선택 (한글 폰트가 등록되었으면 사용, 아니면 Helvetica)
+    title_font = FONT_NAME if HAS_KOREAN_FONT else "Helvetica-Bold"
+    body_font = FONT_NAME if HAS_KOREAN_FONT else "Helvetica"
+
     # ---- Cover / 제목 페이지 ----
-    c.setFont("Helvetica-Bold", 18)
+    c.setFont(title_font, 18)
     c.drawString(
         margin_x,
         height - margin_y - 10 * mm,
         "Daily Briefing – Korea Peninsula",
     )
-    c.setFont("Helvetica", 12)
+    c.setFont(body_font, 12)
     c.drawString(
         margin_x,
         height - margin_y - 20 * mm,
@@ -161,14 +226,16 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
     )
     c.showPage()
 
-    # ---- 도판 페이지: WV + Surface/500/850 일부 샘플 ----
-    def draw_image_page(title, img_bytes, caption):
-        c.setFont("Helvetica-Bold", 14)
+    # ---- 도판 페이지 ----
+    def draw_image_page(title, img_io, caption):
+        # BytesIO 리셋 (Gemini에서 읽었을 수 있으므로)
+        if img_io: img_io.seek(0)
+
+        c.setFont(title_font, 14)
         c.drawString(margin_x, height - margin_y - 10 * mm, title)
 
-        if img_bytes is not None:
-            img = ImageReader(img_bytes)
-            # 최대 높이/폭 비율 유지
+        if img_io is not None:
+            img = ImageReader(img_io)
             max_w = usable_width
             max_h = height - 60 * mm
             iw, ih = img.getSize()
@@ -183,79 +250,71 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
             text_y = y - 10 * mm
         else:
             text_y = height - margin_y - 20 * mm
-            c.setFont("Helvetica-Oblique", 11)
+            c.setFont(body_font, 11)
             c.drawString(margin_x, text_y, "(이미지 로드 실패)")
 
-        c.setFont("Helvetica", 10)
+        c.setFont(body_font, 10)
         c.drawString(margin_x, text_y - 5 * mm, caption)
         c.showPage()
 
     # WV
-    draw_image_page(
-        "GK2A WV 06.3μm",
-        images.get("wv"),
-        urls["wv"],
-    )
+    draw_image_page("GK2A WV 06.3μm", images.get("wv"), urls["wv"])
 
-    # Surface 0/24/48h 샘플
+    # Surface / 500 / 850 (0h, 24h, 48h)
     for idx, step_label in zip([0, 2, 4], ["0h", "24h", "48h"]):
-        draw_image_page(
-            f"Surface {step_label}",
-            images["surface"][idx],
-            urls["surface"][idx],
-        )
+        draw_image_page(f"Surface {step_label}", images["surface"][idx], urls["surface"][idx])
+    
+    for idx, step_label in zip([0, 2, 4], ["0h", "24h", "48h"]):
+        draw_image_page(f"500 hPa {step_label}", images["gph500"][idx], urls["gph500"][idx])
 
-    # 500 hPa 0/24/48h
     for idx, step_label in zip([0, 2, 4], ["0h", "24h", "48h"]):
-        draw_image_page(
-            f"500 hPa {step_label}",
-            images["gph500"][idx],
-            urls["gph500"][idx],
-        )
-
-    # 850 hPa 0/24/48h
-    for idx, step_label in zip([0, 2, 4], ["0h", "24h", "48h"]):
-        draw_image_page(
-            f"850 hPa {step_label}",
-            images["wnd850"][idx],
-            urls["wnd850"][idx],
-        )
+        draw_image_page(f"850 hPa {step_label}", images["wnd850"][idx], urls["wnd850"][idx])
 
     # ---- 텍스트(브리핑) 페이지 ----
-    # 간단하게 여러 페이지로 나누어 출력
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet
-
     buffer2 = io.BytesIO()
     doc = SimpleDocTemplate(buffer2, pagesize=A4,
                             leftMargin=margin_x, rightMargin=margin_x,
                             topMargin=margin_y, bottomMargin=margin_y)
+    
     styles = getSampleStyleSheet()
-    styleN = styles["Normal"]
-    styleN.fontName = "Helvetica"
+    
+    # 한글 스타일 생성
+    style_korean = ParagraphStyle(
+        name='KoreanNormal',
+        parent=styles['Normal'],
+        fontName=body_font,
+        fontSize=10,
+        leading=16  # 줄간격
+    )
+
     story = []
+    if not HAS_KOREAN_FONT:
+        story.append(Paragraph("[Warning: Korean font not found. Text may appear broken.]", styles["Normal"]))
+
     for line in briefing_text.split("\n"):
-        if line.strip() == "":
+        line = line.strip()
+        if line == "":
             story.append(Spacer(1, 4 * mm))
         else:
-            story.append(Paragraph(line.replace("  ", " "), styleN))
-            story.append(Spacer(1, 2 * mm))
+            # Markdown bold(**) 처리 간단 제거 (ReportLab 태그로 변환하거나 제거)
+            clean_line = line.replace("**", "") 
+            story.append(Paragraph(clean_line, style_korean))
+            story.append(Spacer(1, 1 * mm))
 
     doc.build(story)
 
-    # buffer2의 페이지들을 원래 canvas 뒤에 붙이기
+    # PDF 병합
     from PyPDF2 import PdfReader, PdfWriter
-
     buffer.seek(0)
-    main_pdf = buffer.getvalue()
+    
     writer = PdfWriter()
-
-    # 기존(도판) PDF
-    reader_main = PdfReader(io.BytesIO(main_pdf))
+    
+    # 1. 도판 PDF
+    reader_main = PdfReader(io.BytesIO(buffer.getvalue()))
     for page in reader_main.pages:
         writer.add_page(page)
 
-    # 텍스트 PDF
+    # 2. 텍스트 PDF
     reader_text = PdfReader(io.BytesIO(buffer2.getvalue()))
     for page in reader_text.pages:
         writer.add_page(page)
@@ -268,9 +327,13 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
 
 # ----- 6) Discord로 PDF 업로드 -----
 def post_to_discord(pdf_bytes, base_utc):
+    if not DISCORD_WEBHOOK_URL:
+        print("Discord Webhook URL not set. Skipping upload.")
+        return
+
     filename = f"KP_Daily_Briefing_{base_utc.strftime('%Y%m%d_00UTC')}.pdf"
     content = (
-        f"Korea Peninsula Daily Briefing\n"
+        f"Korea Peninsula Daily Briefing (Powered by Gemini)\n"
         f"Valid: {base_utc.strftime('%Y-%m-%d %H UTC')} "
         f"(KST {(base_utc + timedelta(hours=9)).strftime('%Y-%m-%d %H시')})"
     )
@@ -281,32 +344,39 @@ def post_to_discord(pdf_bytes, base_utc):
     data = {
         "content": content
     }
-    resp = requests.post(DISCORD_WEBHOOK_URL, data=data, files=files)
-    resp.raise_for_status()
+    
+    try:
+        resp = requests.post(DISCORD_WEBHOOK_URL, data=data, files=files)
+        resp.raise_for_status()
+        print("Done: PDF sent to Discord.")
+    except Exception as e:
+        print(f"Failed to upload to Discord: {e}")
 
 
 def main():
     base_utc, ymd, hhh = get_base_time_strings()
+    print(f"Target Time: {ymd}{hhh} (00UTC)")
+    
     urls = build_kma_urls(ymd, hhh)
 
-    # 이미지 다운로드
+    print("Downloading images...")
     images = {
         "wv": fetch_image(urls["wv"]),
         "surface": [fetch_image(u) for u in urls["surface"]],
         "gph500": [fetch_image(u) for u in urls["gph500"]],
         "wnd850": [fetch_image(u) for u in urls["wnd850"]],
     }
+    print(images)
 
-    # 브리핑 텍스트 생성
-    briefing_text = generate_briefing_text(base_utc, urls)
+    print("Generating analysis with Gemini...")
+    # Gemini에게 이미지를 함께 전달 (텍스트 프롬프트 + 이미지)
+    briefing_text = generate_briefing_text(base_utc, images)
+    print(briefing_text)
 
-    # PDF 생성
+    print("Building PDF...")
     pdf_bytes = build_pdf(base_utc, urls, images, briefing_text)
 
-    # Discord 업로드
-    post_to_discord(pdf_bytes, base_utc)
-
-    print("Done: PDF sent to Discord.")
+    #post_to_discord(pdf_bytes, base_utc)
 
 
 if __name__ == "__main__":
