@@ -19,13 +19,13 @@ from PIL import Image
 
 # ====== 환경설정 ======
 load_dotenv()
-#GEMINI_API_KEY = 
+#GEMINI_API_KEY = ""
 #DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 # Gemini 설정
 genai.configure(api_key=GEMINI_API_KEY)
 # Free version (High rate limits, standard performance)
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('gemini-2.5-pro')
 
 KST = pytz.timezone("Asia/Seoul")
 
@@ -151,7 +151,25 @@ Valid 시간: {valid_str} (KST: {kst_str})
 5. 주요 불확실성 (Uncertainties)
 6. 내부 브리핑 요약 (3~5줄)
 
-* 지상, 500hPa, 850hPa 차트는 각각 0h, 24h, 48h 예측장입니다. 시계열 변화를 분석에 반영하세요.
+* 지상, 500hPa (와도), 850hPa (바람) 차트는 각각 0h, 24h, 48h 예측장입니다. 시계열 변화를 분석에 반영하세요.
+**반드시 아래 JSON 포맷으로만 응답하세요.** (Markdown이나 기타 텍스트 금지)
+
+{{
+  "title": "한반도 일일 기상 브리핑",
+  "synoptic_overview": "종관 개황 내용...",
+  "key_features_24_48h": "24~48시간 주요 특징...",
+  "sensible_weather": {{
+      "seoul_metro": "수도권 날씨...",
+      "gangwon": "강원도 날씨...",
+      "chungcheong": "충청권...",
+      "jeolla": "전라권...",
+      "gyeongsang": "경상권...",
+      "jeju": "제주도..."
+  }},
+  "hazards": "위험기상요소...",
+  "uncertainties": "주요 불확실성...",
+  "summary": "내부 브리핑 요약 (3줄)"
+}}
 """
 
     # Gemini에 보낼 컨텐츠 리스트 구성
@@ -185,10 +203,16 @@ Valid 시간: {valid_str} (KST: {kst_str})
             contents.append(f"=== [이미지] 500hPa Chart {label} ===")
             contents.append(bytes_to_pil(images_dict["gph500"][idx]))
 
+        # 850hPa
+        if images_dict["wnd850"][idx]:
+            contents.append(f"=== [이미지] 850hPa Chart {label} ===")
+            contents.append(bytes_to_pil(images_dict["wnd850"][idx]))            
+
     # 이미지 사용 후 BytesIO 포인터가 끝으로 이동했을 수 있으므로,
     # 추후 PDF 생성 시 다시 읽을 수 있도록 외부에서 seek(0) 처리가 필요할 수 있음.
     # (여기서는 PIL.Image.open이 복사본을 메모리에 올리므로 원본 BytesIO는 영향이 적으나 안전하게 처리 필요)
 
+    print(contents)
     try:
         response = model.generate_content(contents)
         return response.text
@@ -206,31 +230,24 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
     margin_y = 20 * mm
     usable_width = width - 2 * margin_x
 
-    # 폰트 선택 (한글 폰트가 등록되었으면 사용, 아니면 Helvetica)
+    # 폰트 선택
     title_font = FONT_NAME if HAS_KOREAN_FONT else "Helvetica-Bold"
     body_font = FONT_NAME if HAS_KOREAN_FONT else "Helvetica"
 
-    # ---- Cover / 제목 페이지 ----
+    # 1. Cover Page
     c.setFont(title_font, 18)
-    c.drawString(
-        margin_x,
-        height - margin_y - 10 * mm,
-        "Daily Briefing – Korea Peninsula",
-    )
+    c.drawString(margin_x, height - margin_y - 10 * mm, "Daily Briefing – Korea Peninsula")
     c.setFont(body_font, 12)
     c.drawString(
         margin_x,
         height - margin_y - 20 * mm,
-        f"Valid: {base_utc.strftime('%Y-%m-%d %H UTC')} "
-        f"(KST {(base_utc + timedelta(hours=9)).strftime('%Y-%m-%d %H시')})",
+        f"Valid: {base_utc.strftime('%Y-%m-%d %H UTC')} (KST {(base_utc + timedelta(hours=9)).strftime('%Y-%m-%d %H시')})"
     )
     c.showPage()
 
-    # ---- 도판 페이지 ----
+    # 2. Image Pages
     def draw_image_page(title, img_io, caption):
-        # BytesIO 리셋 (Gemini에서 읽었을 수 있으므로)
-        if img_io: img_io.seek(0)
-
+        if img_io: img_io.seek(0) # Reset pointer
         c.setFont(title_font, 14)
         c.drawString(margin_x, height - margin_y - 10 * mm, title)
 
@@ -245,7 +262,6 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
 
             x = margin_x
             y = (height - margin_y - 20 * mm) - ih_scaled
-
             c.drawImage(img, x, y, iw_scaled, ih_scaled, preserveAspectRatio=True, anchor='sw')
             text_y = y - 10 * mm
         else:
@@ -257,10 +273,9 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
         c.drawString(margin_x, text_y - 5 * mm, caption)
         c.showPage()
 
-    # WV
+    # Draw all images
     draw_image_page("GK2A WV 06.3μm", images.get("wv"), urls["wv"])
 
-    # Surface / 500 / 850 (0h, 24h, 48h)
     for idx, step_label in zip([0, 2, 4], ["0h", "24h", "48h"]):
         draw_image_page(f"Surface {step_label}", images["surface"][idx], urls["surface"][idx])
     
@@ -270,21 +285,22 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
     for idx, step_label in zip([0, 2, 4], ["0h", "24h", "48h"]):
         draw_image_page(f"850 hPa {step_label}", images["wnd850"][idx], urls["wnd850"][idx])
 
-    # ---- 텍스트(브리핑) 페이지 ----
+    # === [CRITICAL FIX] ===
+    c.save()  # <--- This was missing! It finalizes the PDF file in the buffer.
+    # ======================
+
+    # 3. Text PDF Generation
     buffer2 = io.BytesIO()
     doc = SimpleDocTemplate(buffer2, pagesize=A4,
                             leftMargin=margin_x, rightMargin=margin_x,
                             topMargin=margin_y, bottomMargin=margin_y)
-    
     styles = getSampleStyleSheet()
-    
-    # 한글 스타일 생성
     style_korean = ParagraphStyle(
         name='KoreanNormal',
         parent=styles['Normal'],
         fontName=body_font,
         fontSize=10,
-        leading=16  # 줄간격
+        leading=16
     )
 
     story = []
@@ -296,32 +312,35 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
         if line == "":
             story.append(Spacer(1, 4 * mm))
         else:
-            # Markdown bold(**) 처리 간단 제거 (ReportLab 태그로 변환하거나 제거)
             clean_line = line.replace("**", "") 
             story.append(Paragraph(clean_line, style_korean))
             story.append(Spacer(1, 1 * mm))
 
     doc.build(story)
 
-    # PDF 병합
+    # 4. Merge PDFs
     from PyPDF2 import PdfReader, PdfWriter
-    buffer.seek(0)
+    buffer.seek(0)  # Go to start of the image PDF
     
     writer = PdfWriter()
     
-    # 1. 도판 PDF
+    # Read Image PDF (now it has content)
     reader_main = PdfReader(io.BytesIO(buffer.getvalue()))
-    for page in reader_main.pages:
-        writer.add_page(page)
+    for page in reader_main.pages: writer.add_page(page)
 
-    # 2. 텍스트 PDF
+    # Read Text PDF
     reader_text = PdfReader(io.BytesIO(buffer2.getvalue()))
-    for page in reader_text.pages:
-        writer.add_page(page)
+    for page in reader_text.pages: writer.add_page(page)
 
     final_buffer = io.BytesIO()
     writer.write(final_buffer)
     final_buffer.seek(0)
+
+    # --- [NEW] Save to local file ---
+    local_filename = f"Weather_Briefing_{ymd}_{hhh}.pdf"
+    with open(local_filename, "wb") as f:
+        f.write(final_buffer.read())
+
     return final_buffer.read()
 
 
@@ -366,19 +385,18 @@ def main():
         "gph500": [fetch_image(u) for u in urls["gph500"]],
         "wnd850": [fetch_image(u) for u in urls["wnd850"]],
     }
-    print(images)
+    #print(images)
 
     print("Generating analysis with Gemini...")
     # Gemini에게 이미지를 함께 전달 (텍스트 프롬프트 + 이미지)
     briefing_text = generate_briefing_text(base_utc, images)
     print(briefing_text)
 
-    print("Building PDF...")
-    pdf_bytes = build_pdf(base_utc, urls, images, briefing_text)
+    #print("Building PDF...")
+    #pdf_bytes = build_pdf(base_utc, urls, images, briefing_text)
 
     #post_to_discord(pdf_bytes, base_utc)
 
 
-if __name__ == "__main__":
-    main()
-
+#if __name__ == "__main__":
+#    main()
