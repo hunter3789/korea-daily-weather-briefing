@@ -4,6 +4,8 @@ import requests
 from datetime import datetime, timedelta, timezone
 import pytz
 from dotenv import load_dotenv
+import json
+import re
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -128,7 +130,7 @@ def build_kma_urls(ymd, hhh):
 
 
 # ----- 3) 이미지 다운로드 -----
-def fetch_image(url, timeout=15):
+def fetch_image(url, timeout=120):
     try:
         resp = requests.get(url, timeout=timeout)
         if resp.status_code == 200:
@@ -630,6 +632,31 @@ def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
     final.seek(0)
     return final.read()
 
+def clean_parse_json(text):
+    """
+    Safely parses JSON from Gemini output, handling both 
+    Markdown code blocks (```json ... ```) and raw JSON strings.
+    """
+    try:
+        # 1. Try parsing directly (Best for 'response_mime_type="application/json"')
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass  # If failed, try cleaning
+
+    try:
+        # 2. Extract JSON content using Regex (Handles ```json, ```, and plain text)
+        # Looks for the first '{' and the last '}'
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            cleaned_text = match.group(0)
+            return json.loads(cleaned_text)
+    except (json.JSONDecodeError, AttributeError):
+        pass
+
+    # 3. Fallback: Return empty dict or raise specific error
+    print(f"❌ JSON Parsing Failed. Raw text preview: {text[:100]}...")
+    return {}
+
 def main():
     base_utc, ymd, hhh = get_base_time_strings()
     print(f"Target Time: {ymd}{hhh} (00UTC)")
@@ -643,17 +670,15 @@ def main():
         "gph500": [fetch_image(u) for u in urls["gph500"]],
         "wnd850": [fetch_image(u) for u in urls["wnd850"]],
     }
-    #print(images)
 
     print("Generating analysis with Gemini...")
     # Gemini에게 이미지를 함께 전달 (텍스트 프롬프트 + 이미지)
     briefing_text = generate_briefing_text(base_utc, images)
-    print(briefing_text)
+    
+    print("Building PDF...")
+    pdf_bytes = build_pdf(base_utc, urls, images, clean_parse_json(briefing_text))
 
-    #print("Building PDF...")
-    #pdf_bytes = build_pdf(base_utc, urls, images, briefing_text)
-
-    #post_to_discord(pdf_bytes, base_utc)
+    post_to_discord(pdf_bytes, base_utc)
 
     #print("Building Stylish PDF...")
     # CALL THE NEW FUNCTION HERE
@@ -664,8 +689,9 @@ def main():
     #    f.write(pdf_bytes)
     #print(f"✅ PDF saved: {pdf_filename}")
 
-#if __name__ == "__main__":
-#    main()
+if __name__ == "__main__":
+    main()
+
 
 
 
