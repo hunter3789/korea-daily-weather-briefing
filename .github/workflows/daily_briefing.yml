@@ -37,13 +37,13 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          python daily_briefing.py
+          python daily_briefing_openai.py
 
       # 5. (Optional) Save the PDF as an artifact on GitHub
       # This lets you download the PDF from the GitHub Actions summary page
-      - name: Upload PDF Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Weather-Briefing-PDF
-          path: "*.pdf"
-          retention-days: 5
+      #- name: Upload PDF Artifact
+      #  uses: actions/upload-artifact@v4
+      #  with:
+      #    name: Weather-Briefing-PDF
+      #    path: "*.pdf"
+      #    retention-days: 5
