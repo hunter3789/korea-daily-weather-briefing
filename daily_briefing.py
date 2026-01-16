@@ -11,8 +11,21 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as PlatypusImage, PageBreak
+from reportlab.lib.enums import TA_JUSTIFY, TA_CENTER, TA_LEFT
+
+# Map JSON keys to Display Names
+REGION_MAP = {
+    "seoul_metro": "수도권 (Seoul/Metro)",
+    "gangwon": "강원도 (Gangwon)",
+    "chungcheong": "충청권 (Chungcheong)",
+    "jeolla": "전라권 (Jeolla)",
+    "gyeongsang": "경상권 (Gyeongsang)",
+    "jeju": "제주도 (Jeju)",
+    "sea": "해상 (Marine)"
+}
 
 import google.generativeai as genai
 from PIL import Image
@@ -371,6 +384,183 @@ def post_to_discord(pdf_bytes, base_utc):
     except Exception as e:
         print(f"Failed to upload to Discord: {e}")
 
+def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
+    buffer = io.BytesIO()
+    
+    # 1. Setup Document
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm,
+        topMargin=15*mm, bottomMargin=15*mm
+    )
+
+    # 2. Define Custom Styles
+    styles = getSampleStyleSheet()
+    font_main = FONT_NAME if HAS_KOREAN_FONT else "Helvetica"
+    font_bold = FONT_NAME if HAS_KOREAN_FONT else "Helvetica-Bold"
+
+    # Title Style
+    style_title = ParagraphStyle(
+        'BriefingTitle', parent=styles['Heading1'],
+        fontName=font_bold, fontSize=20, leading=24,
+        textColor=colors.navy, alignment=TA_CENTER, spaceAfter=10
+    )
+    
+    # Metadata Style
+    style_meta = ParagraphStyle(
+        'BriefingMeta', parent=styles['Normal'],
+        fontName=font_main, fontSize=10, textColor=colors.gray,
+        alignment=TA_CENTER, spaceAfter=20
+    )
+
+    # Section Header Style
+    style_h2 = ParagraphStyle(
+        'SectionHeader', parent=styles['Heading2'],
+        fontName=font_bold, fontSize=13, leading=16,
+        textColor=colors.darkblue,
+        borderPadding=5, borderWidth=0, spaceBefore=15, spaceAfter=8
+    )
+
+    # Body Text Style
+    style_body = ParagraphStyle(
+        'BodyText', parent=styles['Normal'],
+        fontName=font_main, fontSize=10, leading=15,
+        alignment=TA_JUSTIFY, spaceAfter=5
+    )
+
+    # Hazard/Warning Style
+    style_warning = ParagraphStyle(
+        'WarningText', parent=styles['Normal'],
+        fontName=font_bold, fontSize=10, leading=15,
+        textColor=colors.firebrick
+    )
+
+    # Summary Box Style
+    style_summary_box = ParagraphStyle(
+        'SummaryText', parent=style_body,
+        fontSize=11, leading=16, textColor=colors.black
+    )
+
+    story = []
+
+    # ================= HEADER =================
+    title_text = data.get("title", "Daily Weather Briefing")
+    valid_text = f"Valid: {base_utc.strftime('%Y-%m-%d %H:00 UTC')}  |  Issued by Gemini Forecast System"
+    
+    story.append(Paragraph(title_text, style_title))
+    story.append(Paragraph(valid_text, style_meta))
+    
+    # ================= SUMMARY BOX =================
+    # Create a shaded box for the summary
+    summary_content = data.get("summary", "").replace("\n", "<br/>")
+    summary_para = Paragraph(f"<b>[Executive Summary]</b><br/>{summary_content}", style_summary_box)
+    
+    summary_table = Table([[summary_para]], colWidths=[170*mm])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.aliceblue),
+        ('BOX', (0,0), (-1,-1), 1, colors.steelblue),
+        ('PADDING', (0,0), (-1,-1), 10),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 10*mm))
+
+    # ================= IMAGES (GRID) =================
+    # Layout: Satellite (Left) | Surface 0h (Right)
+    #         Surface 24h (Left) | 500hPa 24h (Right)
+    
+    img_list = []
+    
+    # Helper to resize images for the grid
+    def prep_img(img_io, width=85*mm, height=85*mm):
+        if img_io:
+            img_io.seek(0)
+            img = PlatypusImage(img_io, width=width, height=height)
+            img.hAlign = 'CENTER'
+            return img
+        return Paragraph("(No Image)", style_meta)
+
+    # Row 1: Satellite & Surface 00h
+    row1 = [
+        [prep_img(images['wv']), prep_img(images['surface'][0])],
+        [Paragraph("GK2A Satellite (WV)", style_meta), Paragraph("Surface Analysis (00h)", style_meta)]
+    ]
+    
+    # Row 2: Surface 24h & 500hPa 24h
+    row2 = [
+        [prep_img(images['surface'][2]), prep_img(images['gph500'][2])],
+        [Paragraph("Surface Forecast (+24h)", style_meta), Paragraph("500hPa Forecast (+24h)", style_meta)]
+    ]
+
+    # Build Image Table
+    img_table_data = row1 + row2
+    t_img = Table(img_table_data, colWidths=[90*mm, 90*mm])
+    t_img.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 2),
+        ('RIGHTPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t_img)
+    
+    story.append(PageBreak()) # Move text to next page for cleanliness
+
+    # ================= TEXT REPORT =================
+
+    # 1. Synoptic & Key Features
+    story.append(Paragraph("1. Synoptic Overview & Key Features", style_h2))
+    story.append(Paragraph(f"<b>[Synoptic]</b> {data.get('synoptic_overview', '-')}", style_body))
+    story.append(Spacer(1, 3*mm))
+    story.append(Paragraph(f"<b>[24-48h Outlook]</b> {data.get('key_features_24_48h', '-')}", style_body))
+
+    # 2. Hazards (Highlighted)
+    story.append(Paragraph("2. Hazards & Warnings", style_h2))
+    hazards_text = data.get("hazards", "")
+    # If hazards have newlines, handle them
+    if "\n" in hazards_text:
+        for line in hazards_text.split("\n"):
+            story.append(Paragraph(f"{line}", style_warning))
+    else:
+        story.append(Paragraph(f"{hazards_text}", style_warning))
+
+    # 3. Regional Weather (Table Layout)
+    story.append(Paragraph("3. Regional Weather Details", style_h2))
+    
+    sensible = data.get("sensible_weather", {})
+    table_data = []
+    
+    if isinstance(sensible, dict):
+        for key, value in sensible.items():
+            region_name = REGION_MAP.get(key, key.upper())
+            # Region Column | Description Column
+            table_data.append([
+                Paragraph(f"<b>{region_name}</b>", style_body),
+                Paragraph(value, style_body)
+            ])
+    
+    if table_data:
+        t_regional = Table(table_data, colWidths=[40*mm, 130*mm])
+        t_regional.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
+            ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke), # Shade the region column
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('PADDING', (0,0), (-1,-1), 6),
+        ]))
+        story.append(t_regional)
+
+    # 4. Uncertainties
+    story.append(Paragraph("4. Uncertainties", style_h2))
+    story.append(Paragraph(data.get("uncertainties", "-"), style_body))
+
+    # Build
+    doc.build(story)
+    
+    final = io.BytesIO()
+    final.write(buffer.getvalue())
+    final.seek(0)
+    return final.read()
 
 def main():
     base_utc, ymd, hhh = get_base_time_strings()
@@ -397,6 +587,15 @@ def main():
 
     #post_to_discord(pdf_bytes, base_utc)
 
+    #print("Building Stylish PDF...")
+    # CALL THE NEW FUNCTION HERE
+    #pdf_bytes = build_stylish_pdf(base_utc, urls, images, json_data)
+    
+    #pdf_filename = f"Briefing_Stylish_{ymd}_{hhh}.pdf"
+    #with open(pdf_filename, "wb") as f:
+    #    f.write(pdf_bytes)
+    #print(f"✅ PDF saved: {pdf_filename}")
 
 #if __name__ == "__main__":
 #    main()
+
