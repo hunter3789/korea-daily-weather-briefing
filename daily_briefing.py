@@ -676,7 +676,7 @@ def main():
     briefing_text = generate_briefing_text(base_utc, images)
     
     print("Building PDF...")
-    pdf_bytes = build_pdf(base_utc, urls, images, clean_parse_json(briefing_text))
+    pdf_bytes = build_stylish_pdf(base_utc, urls, images, clean_parse_json(briefing_text))    
 
     post_to_discord(pdf_bytes, base_utc)
 
@@ -691,6 +691,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
