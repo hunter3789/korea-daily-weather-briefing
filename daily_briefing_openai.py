@@ -267,8 +267,9 @@ Valid 시간: {valid_str} (KST: {kst_str})
 
     # Extract text from the response
     # (SDK structure: output -> content -> text.value)
-    out = response.output[0].content[0].text
-    raw = out.value if hasattr(out, "value") else str(out)
+    #out = response.output[0].content[0].text
+    #raw = out.value if hasattr(out, "value") else str(out)
+    raw = getattr(response, "output_text", None)
 
     #try:
     #    data = json.loads(raw)
