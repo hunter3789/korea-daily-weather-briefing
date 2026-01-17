@@ -262,7 +262,7 @@ Valid 시간: {valid_str} (KST: {kst_str})
             }
         ],
         #response_format={"type": "json_object"},
-        temperature=0.3,
+        #temperature=0.3,
     )
 
     # Extract text from the response
