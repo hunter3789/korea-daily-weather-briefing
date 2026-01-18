@@ -371,7 +371,7 @@ def post_to_discord(pdf_bytes, base_utc, data):
         f"Korea Peninsula Daily Briefing (Powered by Gemini)\n"
         f"Valid: {base_utc.strftime('%Y-%m-%d %H UTC')} "
         f"(KST {(base_utc + timedelta(hours=9)).strftime('%Y-%m-%d %H시')})\n"
-        f"[Summary] {data.get(\"summary\", \"\")}"        
+        f"[Summary] {data.get('summary', '')}"        
     )
 
     files = {
@@ -693,6 +693,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
