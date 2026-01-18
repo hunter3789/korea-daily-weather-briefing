@@ -578,16 +578,17 @@ def build_stylish_pdf(base_utc, urls, images, data) -> bytes:
 # ===================== DISCORD UPLOAD =====================
 
 
-def post_to_discord(pdf_bytes, base_utc):
+def post_to_discord(pdf_bytes, base_utc, data):
     if not DISCORD_WEBHOOK_URL:
         print("Discord Webhook URL not set. Skipping upload.")
         return
 
-    filename = f"KP_Daily_Briefing_{base_utc.strftime('%Y%m%d_00UTC')}.pdf"
+    filename = f"KP_Daily_Briefing_{base_utc.strftime('%Y%m%d_00UTC')}_OpenAI.pdf"
     content = (
         f"Korea Peninsula Daily Briefing (Powered by OpenAI)\n"
         f"Valid: {base_utc.strftime('%Y-%m-%d %H UTC')} "
-        f"(KST {(base_utc + timedelta(hours=9)).strftime('%Y-%m-%d %H시')})"
+        f"(KST {(base_utc + timedelta(hours=9)).strftime('%Y-%m-%d %H시')})\n"
+        f"[Summary] {data.get(\"summary\", \"\")}"          
     )
 
     files = {
@@ -660,7 +661,7 @@ def main():
     #    f.write(pdf_bytes)
     #print(f"✅ PDF saved locally: {local_filename}")
 
-    post_to_discord(pdf_bytes, base_utc)
+    post_to_discord(pdf_bytes, base_utc, clean_parse_json(data))
   
 if __name__ == "__main__":
     main()
