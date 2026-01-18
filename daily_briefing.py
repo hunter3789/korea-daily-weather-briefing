@@ -361,16 +361,17 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
 
 
 # ----- 6) Discord로 PDF 업로드 -----
-def post_to_discord(pdf_bytes, base_utc):
+def post_to_discord(pdf_bytes, base_utc, data):
     if not DISCORD_WEBHOOK_URL:
         print("Discord Webhook URL not set. Skipping upload.")
         return
 
-    filename = f"KP_Daily_Briefing_{base_utc.strftime('%Y%m%d_00UTC')}.pdf"
+    filename = f"KP_Daily_Briefing_{base_utc.strftime('%Y%m%d_00UTC')}_Gemini.pdf"
     content = (
         f"Korea Peninsula Daily Briefing (Powered by Gemini)\n"
         f"Valid: {base_utc.strftime('%Y-%m-%d %H UTC')} "
-        f"(KST {(base_utc + timedelta(hours=9)).strftime('%Y-%m-%d %H시')})"
+        f"(KST {(base_utc + timedelta(hours=9)).strftime('%Y-%m-%d %H시')})\n"
+        f"[Summary] {data.get(\"summary\", \"\")}"        
     )
 
     files = {
@@ -679,7 +680,7 @@ def main():
     print("Building PDF...")
     pdf_bytes = build_stylish_pdf(base_utc, urls, images, clean_parse_json(briefing_text))    
 
-    post_to_discord(pdf_bytes, base_utc)
+    post_to_discord(pdf_bytes, base_utc, clean_parse_json(briefing_text))
 
     #print("Building Stylish PDF...")
     # CALL THE NEW FUNCTION HERE
@@ -692,6 +693,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
