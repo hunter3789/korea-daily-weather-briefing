@@ -48,9 +48,11 @@ jobs:
         with:
           name: Briefing-Gemini
           path: KP_Daily_Briefing_*_Gemini.pdf
+          retention-days: 5          
       
       - name: Upload OpenAI Briefing
         uses: actions/upload-artifact@v4
         with:
           name: Briefing-OpenAI
           path: KP_Daily_Briefing_*_OpenAI.pdf
+          retention-days: 5          
