@@ -655,13 +655,13 @@ def main():
     print("Building PDF...")
     pdf_bytes = build_stylish_pdf(base_utc, urls, images, clean_parse_json(data))
 
+    post_to_discord(pdf_bytes, base_utc, clean_parse_json(data))    
+    
     # Save locally as well
     pdf_filename = f"KP_Daily_Briefing_{base_utc.strftime('%Y%m%d_00UTC')}_OpenAI.pdf"
     with open(pdf_filename, "wb") as f:
         f.write(pdf_bytes)
     print(f"✅ PDF saved: {pdf_filename}")
-
-    post_to_discord(pdf_bytes, base_utc, clean_parse_json(data))
   
 if __name__ == "__main__":
     main()
