@@ -686,13 +686,14 @@ def main():
     # CALL THE NEW FUNCTION HERE
     #pdf_bytes = build_stylish_pdf(base_utc, urls, images, json_data)
     
-    #pdf_filename = f"Briefing_Stylish_{ymd}_{hhh}.pdf"
-    #with open(pdf_filename, "wb") as f:
-    #    f.write(pdf_bytes)
-    #print(f"✅ PDF saved: {pdf_filename}")
+    pdf_filename = f"KP_Daily_Briefing_{base_utc.strftime('%Y%m%d_00UTC')}_Gemini.pdf"
+    with open(pdf_filename, "wb") as f:
+        f.write(pdf_bytes)
+    print(f"✅ PDF saved: {pdf_filename}")
 
 if __name__ == "__main__":
     main()
+
 
 
 
