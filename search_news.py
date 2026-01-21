@@ -6,6 +6,8 @@ import time
 
 # ====== 환경설정 ======
 load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+DISCORD_NEWS_WEBHOOK_URL = os.getenv("DISCORD_NEWS_WEBHOOK_URL")
 
 def get_weather_news():
     print("🔍 Searching for weather news...")
