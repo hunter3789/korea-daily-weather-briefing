@@ -29,5 +29,5 @@ jobs:
         env:
           # These secrets must be added in your GitHub Repo Settings
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python weather_bot.py
+          DISCORD_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_NEWS_WEBHOOK_URL }}
+        run: python search_news.py
