@@ -34,3 +34,10 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_NEWS_WEBHOOK_URL: ${{ secrets.DISCORD_NEWS_WEBHOOK_URL }}
         run: python search_news.py
+
+      - name: Upload Daily_Weather_News
+        uses: actions/upload-artifact@v4
+        with:
+          name: Daily_Weather_News
+          path: Daily_Weather_News.pdf
+          retention-days: 5          
