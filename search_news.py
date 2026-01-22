@@ -82,7 +82,7 @@ def post_to_discord(content):
     
     # If it fits in one message, just send it
     if len(content) <= LIMIT:
-        requests.post(DISCORD_WEBHOOK_URL, json={"content": content})
+        requests.post(DISCORD_NEWS_WEBHOOK_URL, json={"content": content})
         print("✅ Posted to Discord (Single message)")
         return
 
@@ -96,7 +96,7 @@ def post_to_discord(content):
         # Check if adding this line (plus a newline) would exceed the limit
         if len(current_chunk) + len(line) + 1 > LIMIT:
             # Send the current chunk
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": current_chunk})
+            requests.post(DISCORD_NEWS_WEBHOOK_URL, json={"content": current_chunk})
             print("   -> Sent part")
             
             # Reset chunk to the current line
@@ -110,7 +110,7 @@ def post_to_discord(content):
             
     # Send any remaining text
     if current_chunk:
-        requests.post(DISCORD_WEBHOOK_URL, json={"content": current_chunk})
+        requests.post(DISCORD_NEWS_WEBHOOK_URL, json={"content": current_chunk})
         print("   -> Sent final part")
     
     print("✅ All parts posted successfully!")
