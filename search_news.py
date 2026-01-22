@@ -1,8 +1,11 @@
 import os
+import io
 import requests
 from google import genai
 from google.genai import types
 import time
+from datetime import datetime, timedelta, timezone
+from dotenv import load_dotenv
 
 # ====== 환경설정 ======
 load_dotenv()
