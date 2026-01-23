@@ -30,6 +30,21 @@ EMOJI_FONT_NAME = "Symbola"
 pdfmetrics.registerFont(TTFont(KOREAN_FONT_NAME, "NanumGothic.ttf"))
 pdfmetrics.registerFont(TTFont(EMOJI_FONT_NAME, "Symbola.ttf"))
 
+KST = pytz.timezone("Asia/Seoul")
+
+# ----- 1) 오늘 00UTC 기준 날짜 문자열 생성 -----
+def get_base_time_strings():
+    now_kst = datetime.now(KST)
+    base_utc = datetime(
+        year=now_kst.year,
+        month=now_kst.month,
+        day=now_kst.day,
+        tzinfo=timezone.utc,
+    )
+    ymd = base_utc.strftime("%Y%m%d")
+    hhh = base_utc.strftime("%H")
+    return base_utc, ymd, hhh
+    
 def get_weather_news():
     print("🔍 Searching for weather news...")
     
@@ -505,6 +520,8 @@ def generate_weather_news_pdf_from_markdown(content_md: str,
 if __name__ == "__main__":
     news_update = get_weather_news()
     #print(news_update)
-    if news_update:
-        post_to_discord(news_update)                
-    generate_weather_news_pdf_from_markdown(news_update, "Daily_Weather_News.pdf")
+    #if news_update:
+    #    post_to_discord(news_update)         
+    base_utc, ymd, hhh = get_base_time_strings()     
+    pdf_filename = f"Daily_Weather_News_{base_utc.strftime('%Y%m%d_00UTC')}_Gemini.pdf"
+    generate_weather_news_pdf_from_markdown(news_update, pdf_filename)
