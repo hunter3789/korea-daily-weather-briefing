@@ -525,4 +525,6 @@ if __name__ == "__main__":
     #    post_to_discord(news_update)         
     base_utc, ymd, hhh = get_base_time_strings()     
     pdf_filename = f"Daily_Weather_News_{base_utc.strftime('%Y%m%d_00UTC')}_Gemini.pdf"
-    generate_weather_news_pdf_from_markdown(news_update, pdf_filename)
+    with open(pdf_filename, "wb") as f:
+        f.write(generate_weather_news_pdf_from_markdown(news_update))
+    print(f"✅ PDF saved: {pdf_filename}")      
