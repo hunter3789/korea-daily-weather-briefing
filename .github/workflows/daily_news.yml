@@ -37,7 +37,7 @@ jobs:
 
       - name: Upload Daily_Weather_News
         uses: actions/upload-artifact@v4
-        with:
+        with: 
           name: Daily_Weather_News
-          path: Daily_Weather_News.pdf
-          retention-days: 5          
+          path: Daily_Weather_News_*.pdf
+          retention-days: 5            
