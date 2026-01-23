@@ -314,6 +314,7 @@ def get_thumbnail_url(page_url: str, timeout: float = 5.0) -> str | None:
 
 def draw_thumbnail_from_url(c,
                             image_url: str,
+                            link_url: str,                            
                             x: float,
                             y: float,
                             size: float = 10,
@@ -355,6 +356,14 @@ def draw_thumbnail_from_url(c,
             preserveAspectRatio=False,  # we already handled it
             mask="auto",
         )
+
+        # Make it clickable
+        if link_url:
+            c.linkURL(
+                link_url,
+                (x, y, x + thumb_w, y + thumb_h),
+                relative=0
+            )                                
     except Exception as e:
         print(f"[thumb] Failed to draw image {image_url}: {e}")
         return
@@ -563,6 +572,7 @@ def generate_weather_news_pdf_from_markdown(content_md: str,
                         draw_thumbnail_from_url(
                             c,
                             thumb_url,
+                            link_url,
                             x=thumb_x + 10,
                             y=thumb_y,
                             size=thumb_size,
