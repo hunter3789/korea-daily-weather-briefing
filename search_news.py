@@ -26,10 +26,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_NEWS_WEBHOOK_URL = os.getenv("DISCORD_NEWS_WEBHOOK_URL")
 
 KOREAN_FONT_NAME = "NanumGothic"
-EMOJI_FONT_NAME = "Symbola"
+EMOJI_FONT_NAME = "NotoEmoji"
 
 pdfmetrics.registerFont(TTFont(KOREAN_FONT_NAME, "NanumGothic.ttf"))
-pdfmetrics.registerFont(TTFont(EMOJI_FONT_NAME, "Symbola.ttf"))
+pdfmetrics.registerFont(TTFont(EMOJI_FONT_NAME, "NotoEmoji.ttf"))
 
 KST = pytz.timezone("Asia/Seoul")
 
