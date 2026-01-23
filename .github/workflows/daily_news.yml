@@ -26,7 +26,7 @@ jobs:
           pip install -r requirements.txt          
           pip install google-genai requests
           pip install markdown
-          pip install emoji
+          pip install emoji bs4
 
       - name: Run Weather Bot
         env:
