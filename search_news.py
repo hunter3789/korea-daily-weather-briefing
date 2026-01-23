@@ -660,8 +660,8 @@ def generate_weather_news_pdf_from_markdown(content_md: str,
 if __name__ == "__main__":
     news_update = get_weather_news()
     #print(news_update)
-    #if news_update:
-    #    post_to_discord(news_update)         
+    if news_update:
+        post_to_discord(news_update)         
     base_utc, ymd, hhh = get_base_time_strings()     
     pdf_filename = f"Daily_Weather_News_{base_utc.strftime('%Y%m%d_00UTC')}_Gemini.pdf"
     with open(pdf_filename, "wb") as f:
