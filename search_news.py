@@ -11,6 +11,9 @@ import emoji
 import markdown
 import textwrap
 import re
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
@@ -275,6 +278,87 @@ def measure_text_width(text, text_font, emoji_font, font_size=11):
 
     return width
 
+def get_thumbnail_url(page_url: str, timeout: float = 5.0) -> str | None:
+    """
+    Try to fetch a representative thumbnail image for a web page.
+    Priority:
+      1. <meta property="og:image">
+      2. <meta name="twitter:image">
+      3. <link rel="icon"> or similar
+      4. /favicon.ico as last resort
+    Returns absolute image URL or None.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; WeatherNewsBot/1.0)"
+    }
+
+    try:
+        resp = requests.get(page_url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"[thumb] Failed to fetch page {page_url}: {e}")
+        return None
+
+    soup = BeautifulSoup(resp.text, "html.parser")
+
+    # 1. og:image
+    og = soup.find("meta", property="og:image")
+    if og and og.get("content"):
+        return urljoin(page_url, og["content"])
+
+    # 2. twitter:image
+    tw = soup.find("meta", attrs={"name": "twitter:image"})
+    if tw and tw.get("content"):
+        return urljoin(page_url, tw["content"])
+
+
+def draw_thumbnail_from_url(c,
+                            image_url: str,
+                            x: float,
+                            y: float,
+                            size: float = 10,
+                            timeout: float = 5.0):
+    """
+    Download an image and draw it at (x, y) with a square size.
+    (x, y) = lower-left corner.
+    """
+    if not image_url:
+        return
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; WeatherNewsBot/1.0)"
+    }
+
+    try:
+        resp = requests.get(image_url, headers=headers, timeout=timeout)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"[thumb] Failed to download image {image_url}: {e}")
+        return
+
+    try:
+        img_bytes = io.BytesIO(resp.content)
+        img_reader = ImageReader(img_bytes)
+        w, h = img_reader.getSize()
+        if size > h:
+            size = h
+        aspect = w / float(h)
+        thumb_h = size
+        thumb_w = size * aspect
+
+        c.drawImage(
+            img_reader,
+            x=x,
+            y=y,
+            width=thumb_w,
+            height=thumb_h,
+            preserveAspectRatio=False,  # we already handled it
+            mask="auto",
+        )
+    except Exception as e:
+        print(f"[thumb] Failed to draw image {image_url}: {e}")
+        return
+        
 def generate_weather_news_pdf_from_markdown(content_md: str,
                                             base_utc: datetime | None = None) -> bytes:
     if base_utc is None:
@@ -457,20 +541,65 @@ def generate_weather_news_pdf_from_markdown(content_md: str,
 
                 # Slight indent for bullets
                 bullet_prefix = "• "
-                # if we're in sources section, make bullet slightly smaller/grey
+
+                # If we are in the Real Sources section, we’ll try to draw a thumbnail.
                 if in_sources_section:
-                    c.setFillColorRGB(0.2, 0.2, 0.2)
-                draw_markdown_line_with_links(
-                    c,
-                    margin_left + 4 * mm,
-                    y,
-                    bullet_prefix + text,
-                    text_font=KOREAN_FONT_NAME,
-                    emoji_font=EMOJI_FONT_NAME,
-                    font_size=10 if in_sources_section else 11,
-                )
-                c.setFillColorRGB(0, 0, 0)
-                y -= line_height
+                    # Extract the first [title](url) from the bullet
+                    m = re.search(r'\[([^\]]+)\]\(([^)]+)\)', text)
+                    thumb_url = None
+                    if m:
+                        _, link_url = m.groups()
+                        thumb_url = get_thumbnail_url(link_url)
+
+                    thumb_size = 120  # pt
+                    #thumb_margin = 6  # space between thumb and text
+
+                    # Thumbnail position
+                    thumb_x = margin_left + 4 * mm
+                    # y is baseline; move image slightly below baseline
+                    thumb_y = y - (thumb_size * 1.0) - 5
+
+                    if thumb_url:
+                        draw_thumbnail_from_url(
+                            c,
+                            thumb_url,
+                            x=thumb_x + 10,
+                            y=thumb_y,
+                            size=thumb_size,
+                        )
+
+                    # Text starts to the right of thumbnail
+                    text_x = thumb_x
+
+                    c.setFillColorRGB(0.2, 0.2, 0.2)  # slightly darker for sources
+                    draw_markdown_line_with_links(
+                        c,
+                        text_x,
+                        y,
+                        bullet_prefix + text,  # "• [title](url)"
+                        text_font=KOREAN_FONT_NAME,
+                        emoji_font=EMOJI_FONT_NAME,
+                        font_size=10,
+                    )
+                    c.setFillColorRGB(0, 0, 0)
+                    if thumb_url:
+                       y -= line_height + thumb_size + 10                    
+                    else:                    
+                       y -= line_height
+
+                else:
+                    # not in sources section → original behavior (no thumbnail)
+                    draw_markdown_line_with_links(
+                        c,
+                        margin_left + 4 * mm,
+                        y,
+                        bullet_prefix + text,
+                        text_font=KOREAN_FONT_NAME,
+                        emoji_font=EMOJI_FONT_NAME,
+                        font_size=11,
+                    )
+                    y -= line_height
+
             else:
                 # bullet without link → normal wrapping
                 wrapped = wrapper.wrap(text) or [""]
@@ -521,8 +650,8 @@ def generate_weather_news_pdf_from_markdown(content_md: str,
 if __name__ == "__main__":
     news_update = get_weather_news()
     #print(news_update)
-    if news_update:
-        post_to_discord(news_update)         
+    #if news_update:
+    #    post_to_discord(news_update)         
     base_utc, ymd, hhh = get_base_time_strings()     
     pdf_filename = f"Daily_Weather_News_{base_utc.strftime('%Y%m%d_00UTC')}_Gemini.pdf"
     with open(pdf_filename, "wb") as f:
