@@ -2,8 +2,6 @@
 
 Small AI-powered utilities for **meteorological analysis and weather information synthesis**.
 
-These tools combine **operational weather data, web search, and large language models** to automate weather briefings and global weather monitoring.
-
 ---
 
 ## 1. Worldwide Extreme Weather / Climate News
