@@ -32,23 +32,21 @@ REGION_MAP = {
 import google.generativeai as genai
 from PIL import Image
 
-# ====== 환경설정 ======
+# ====== Environment Configuration ======
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# Gemini 설정
+# Configure Gemini API
 genai.configure(api_key=GEMINI_API_KEY)
 # Free version (High rate limits, standard performance)
 model = genai.GenerativeModel('gemini-2.5-pro')
 
 KST = pytz.timezone("Asia/Seoul")
 
-# ====== [중요] 한글 폰트 설정 ======
-# ReportLab 기본 폰트(Helvetica)는 한글을 출력하지 못하므로, 시스템에 있는 한글 폰트 경로를 지정해야 합니다.
-# 예: Windows -> "C:/Windows/Fonts/malgun.ttf"
-# 예: Linux/Mac -> "/usr/share/fonts/truetype/nanum/NanumGothic.ttf" (경로 확인 필요)
-# ====== [Auto-Download] 한글 폰트 설정 ======
+# ====== [IMPORTANT] Korean Font Configuration ======
+# ReportLab’s default fonts (e.g., Helvetica) do not support Korean characters.
+# Therefore, a Korean font must be specified.
 KOREAN_FONT_URL = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
 KOREAN_FONT_PATH = "NanumGothic.ttf"
 FONT_NAME = "NanumGothic"
@@ -78,7 +76,7 @@ def register_korean_font():
 # Run registration
 HAS_KOREAN_FONT = register_korean_font()
 
-# ----- 1) 오늘 00UTC 기준 날짜 문자열 생성 -----
+# ----- 1) Generate date strings using today's 00 UTC as the base time -----
 def get_base_time_strings():
     now_kst = datetime.now(KST)
     base_utc = datetime(
@@ -92,7 +90,7 @@ def get_base_time_strings():
     return base_utc, ymd, hhh
 
 
-# ----- 2) KMA 이미지 URL 생성 -----
+# ----- 2) Build KMA chart image URLs -----
 def build_kma_urls(ymd, hhh):
     base_time = f"{ymd}{hhh}"
     
@@ -129,7 +127,7 @@ def build_kma_urls(ymd, hhh):
     }
 
 
-# ----- 3) 이미지 다운로드 -----
+# ----- 3) Download chart images -----
 def fetch_image(url, timeout=120):
     try:
         resp = requests.get(url, timeout=timeout)
@@ -141,15 +139,16 @@ def fetch_image(url, timeout=120):
         return None
 
 
-# ----- 4) Gemini로 한국어 브리핑 텍스트 생성 (멀티모달) -----
+# ----- 4) Generate Korean weather briefing using Gemini (multimodal analysis) -----
 def generate_briefing_text(base_utc, images_dict):
     """
-    이미지 데이터를 직접 Gemini에게 전달하여 분석을 요청합니다.
+    Send chart images directly to Gemini for multimodal analysis.
+    The model analyzes the meteorological charts and generates
+    a structured weather briefing.
     """
     valid_str = base_utc.strftime("%Y.%m.%d.%H UTC")
     kst_str = (base_utc + timedelta(hours=9)).strftime("%Y-%m-%d %H시")
 
-    # 프롬프트 텍스트
     prompt_text = f"""
 당신은 한국 기상청 수석 예보관입니다.
 첨부된 위성영상(WV), 지상일기도(Surface), 500hPa, 850hPa 차트를 분석하여 일일 브리핑을 작성하세요.
@@ -187,24 +186,23 @@ Valid 시간: {valid_str} (KST: {kst_str})
   "summary": "내부 브리핑 요약 (3줄)"
 }}
 """
-
-    # Gemini에 보낼 컨텐츠 리스트 구성
     contents = [prompt_text]
 
-    # Helper: BytesIO -> PIL Image 변환
+    # Helper: BytesIO -> PIL Image
     def bytes_to_pil(b_io):
         if b_io is None: return None
         b_io.seek(0)
         img = Image.open(b_io)
         return img
 
-    # 1. 위성 영상 추가
+    # 1. Add satellite imagery
     if images_dict.get("wv"):
         contents.append("=== [이미지] GK2A 위성 영상 (수증기) ===")
         contents.append(bytes_to_pil(images_dict["wv"]))
 
-    # 2. 주요 스텝(0h, 24h, 48h)만 선별해서 Gemini에게 전달 (토큰 절약 및 핵심 분석)
-    # 인덱스: 0(0h), 2(24h), 4(48h)
+    # 2. Send only key forecast steps (0h, 24h, 48h) to Gemini
+    #    to reduce token usage while preserving essential information.
+    # Indices: 0 (0h), 2 (24h), 4 (48h)
     target_indices = [0, 2, 4]
     time_labels = ["Initial (00h)", "Forecast (+24h)", "Forecast (+48h)"]
 
@@ -224,19 +222,19 @@ Valid 시간: {valid_str} (KST: {kst_str})
             contents.append(f"=== [이미지] 850hPa Chart {label} ===")
             contents.append(bytes_to_pil(images_dict["wnd850"][idx]))            
 
-    # 이미지 사용 후 BytesIO 포인터가 끝으로 이동했을 수 있으므로,
-    # 추후 PDF 생성 시 다시 읽을 수 있도록 외부에서 seek(0) 처리가 필요할 수 있음.
-    # (여기서는 PIL.Image.open이 복사본을 메모리에 올리므로 원본 BytesIO는 영향이 적으나 안전하게 처리 필요)
+    # After the image is processed, the BytesIO pointer may be at the end.
+    # Resetting the pointer (seek(0)) may be required before reusing the image
+    # when generating the PDF.
 
     print(contents)
     try:
         response = model.generate_content(contents)
         return response.text
     except Exception as e:
-        return f"분석 생성 실패: {str(e)}"
+        return f"generation failed: {str(e)}"
 
 
-# ----- 5) ReportLab로 단일 컬럼 PDF 생성 -----
+# ----- 5) Generate a single-column PDF report using ReportLab -----
 def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -246,7 +244,6 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
     margin_y = 20 * mm
     usable_width = width - 2 * margin_x
 
-    # 폰트 선택
     title_font = FONT_NAME if HAS_KOREAN_FONT else "Helvetica-Bold"
     body_font = FONT_NAME if HAS_KOREAN_FONT else "Helvetica"
 
@@ -360,7 +357,7 @@ def build_pdf(base_utc, urls, images, briefing_text) -> bytes:
     return final_buffer.read()
 
 
-# ----- 6) Discord로 PDF 업로드 -----
+# ----- 6) Upload the generated PDF to Discord -----
 def post_to_discord(pdf_bytes, base_utc, data):
     if not DISCORD_WEBHOOK_URL:
         print("Discord Webhook URL not set. Skipping upload.")
@@ -693,13 +690,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
