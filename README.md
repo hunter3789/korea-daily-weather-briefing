@@ -1,6 +1,6 @@
 # AI Weather Intelligence Tools
 
-Small AI-powered utilities for **meteorological analysis and weather information synthesis**.
+Small AI-powered utilities for **meteorological analysis and weather information synthesis**.  
 All workflows are operated automatically via GitHub Actions.  
 
 ---
