@@ -6,3 +6,7 @@ pytz
 Pillow
 PyPDF2
 openai>=1.30.0
+google-genai
+emoji
+markdown
+beautifulsoup4
